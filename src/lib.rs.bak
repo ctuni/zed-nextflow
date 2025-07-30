@@ -1,0 +1,138 @@
+use std::fs;
+use std::path::PathBuf;
+
+use zed_extension_api::{
+    self as zed, download_file, latest_github_release,
+    lsp::{Completion, CompletionKind},
+    register_extension, set_language_server_installation_status, CodeLabel, CodeLabelSpan,
+    DownloadedFileType, Extension, GithubReleaseOptions, LanguageServerId,
+    LanguageServerInstallationStatus, Worktree,
+};
+
+struct NextflowExtension {
+    cached_jar_path: Option<String>,
+}
+
+impl NextflowExtension {
+    /// Create a writable cache directory in the system temp folder
+    fn cache_dir() -> zed::Result<PathBuf> {
+        let tmp = std::env::temp_dir().join("zed-nextflow-cache");
+        fs::create_dir_all(&tmp).map_err(|e| format!("failed to create cache dir: {e}"))?;
+        Ok(tmp)
+    }
+
+    /// Locate or download the language-server-all.jar for Nextflow
+    fn language_server_jar_path(
+        &mut self,
+        language_server_id: &LanguageServerId,
+    ) -> zed::Result<String> {
+        if let Some(path) = &self.cached_jar_path {
+            if fs::metadata(path).map_or(false, |stat| stat.is_file()) {
+                return Ok(path.clone());
+            }
+        }
+
+        set_language_server_installation_status(
+            &language_server_id,
+            &LanguageServerInstallationStatus::CheckingForUpdate,
+        );
+
+        let release = latest_github_release(
+            "nextflow-io/language-server",
+            GithubReleaseOptions {
+                require_assets: true,
+                pre_release: false,
+            },
+        )?;
+
+        let asset = release
+            .assets
+            .iter()
+            .find(|asset| asset.name == "language-server-all.jar")
+            .ok_or_else(|| "No language-server-all.jar asset found".to_string())?;
+
+        let cache_dir = Self::cache_dir()?;
+        let version_dir = cache_dir.join(format!("nextflow-language-server-{}", release.version));
+        fs::create_dir_all(&version_dir)
+            .map_err(|e| format!("failed to create version dir: {e}"))?;
+        let jar_path = version_dir.join("language-server-all.jar");
+
+        if !fs::metadata(&jar_path).map_or(false, |stat| stat.is_file()) {
+            set_language_server_installation_status(
+                &language_server_id,
+                &LanguageServerInstallationStatus::Downloading,
+            );
+            let version_dir_str = version_dir.to_string_lossy();
+            download_file(
+                &asset.download_url,
+                &version_dir_str,
+                DownloadedFileType::Zip,
+            )
+            .map_err(|e| format!("failed to download jar: {e}"))?;
+        }
+
+        let jar_str = jar_path.to_string_lossy().to_string();
+        self.cached_jar_path = Some(jar_str.clone());
+        Ok(jar_str)
+    }
+}
+
+impl Extension for NextflowExtension {
+    fn new() -> Self {
+        Self {
+            cached_jar_path: None,
+        }
+    }
+
+    fn language_server_command(
+        &mut self,
+        language_server_id: &LanguageServerId,
+        _worktree: &Worktree,
+    ) -> zed::Result<zed::Command> {
+        let jar_path = self.language_server_jar_path(language_server_id)?;
+        Ok(zed::Command {
+            command: "java".into(),
+            args: vec!["-jar".into(), jar_path],
+            env: Vec::new(),
+        })
+    }
+
+    fn label_for_completion(
+        &self,
+        _language_server_id: &LanguageServerId,
+        completion: Completion,
+    ) -> Option<CodeLabel> {
+        match completion.kind? {
+            CompletionKind::Class | CompletionKind::Enum | CompletionKind::Interface => {
+                Some(CodeLabel {
+                    code: format!("{} variable", completion.label),
+                    spans: vec![
+                        CodeLabelSpan::code_range(0..completion.label.len()),
+                        CodeLabelSpan::literal(format!(" (import {})", completion.detail?), None),
+                    ],
+                    filter_range: (0..completion.label.len()).into(),
+                })
+            }
+            CompletionKind::Method => {
+                let code = format!("{}()", completion.label);
+                Some(CodeLabel {
+                    spans: vec![CodeLabelSpan::code_range(0..code.len())],
+                    code,
+                    filter_range: (0..completion.label.len()).into(),
+                })
+            }
+            CompletionKind::Variable => {
+                let def = "def ";
+                let code = format!("{def}{}", completion.label);
+                Some(CodeLabel {
+                    spans: vec![CodeLabelSpan::code_range(def.len()..code.len())],
+                    code,
+                    filter_range: (0..completion.label.len()).into(),
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
+register_extension!(NextflowExtension);

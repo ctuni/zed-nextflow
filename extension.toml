@@ -1,0 +1,15 @@
+id = "nextflow"
+name = "Nextflow"
+version = "0.0.1"
+schema_version = 1
+authors = ["Cris Tuñí-Domínguez <c.tuni.dominguez@gmail.com>"]
+description = "Nextflow language support"
+repository = "https://github.com/ctuni/zed-nextflow"
+
+[language_servers.nextflow]
+name = "Nextflow"
+language = "Nextflow"
+
+[grammars.nextflow]
+repository = "https://github.com/ctuni/tree-sitter-nextflow"
+rev = "05454f78badcd0c554c8efb6be0dd0fd17e74bc6"
