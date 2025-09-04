@@ -11,5 +11,5 @@ name = "Nextflow"
 language = "Nextflow"
 
 [grammars.nextflow]
-repository = "https://github.com/ctuni/tree-sitter-nextflow"
-rev = "05454f78badcd0c554c8efb6be0dd0fd17e74bc6"
+repository = "https://github.com/nextflow-io/tree-sitter-nextflow"
+rev = "29834b51c0b49d22ec1bc1614afbd5c39c7789cc"
