@@ -1,6 +1,4 @@
 use std::fs;
-use std::path::PathBuf;
-
 use zed_extension_api::{
     self as zed, download_file, latest_github_release,
     lsp::{Completion, CompletionKind},
@@ -14,66 +12,8 @@ struct NextflowExtension {
 }
 
 impl NextflowExtension {
-    /// Create a writable cache directory in the system temp folder
-    fn cache_dir() -> zed::Result<PathBuf> {
-        let tmp = std::env::temp_dir().join("zed-nextflow-cache");
-        fs::create_dir_all(&tmp).map_err(|e| format!("failed to create cache dir: {e}"))?;
-        Ok(tmp)
-    }
-
-    /// Locate or download the language-server-all.jar for Nextflow
-    fn language_server_jar_path(
-        &mut self,
-        language_server_id: &LanguageServerId,
-    ) -> zed::Result<String> {
-        if let Some(path) = &self.cached_jar_path {
-            if fs::metadata(path).map_or(false, |stat| stat.is_file()) {
-                return Ok(path.clone());
-            }
-        }
-
-        set_language_server_installation_status(
-            &language_server_id,
-            &LanguageServerInstallationStatus::CheckingForUpdate,
-        );
-
-        let release = latest_github_release(
-            "nextflow-io/language-server",
-            GithubReleaseOptions {
-                require_assets: true,
-                pre_release: false,
-            },
-        )?;
-
-        let asset = release
-            .assets
-            .iter()
-            .find(|asset| asset.name == "language-server-all.jar")
-            .ok_or_else(|| "No language-server-all.jar asset found".to_string())?;
-
-        let cache_dir = Self::cache_dir()?;
-        let version_dir = cache_dir.join(format!("nextflow-language-server-{}", release.version));
-        fs::create_dir_all(&version_dir)
-            .map_err(|e| format!("failed to create version dir: {e}"))?;
-        let jar_path = version_dir.join("language-server-all.jar");
-
-        if !fs::metadata(&jar_path).map_or(false, |stat| stat.is_file()) {
-            set_language_server_installation_status(
-                &language_server_id,
-                &LanguageServerInstallationStatus::Downloading,
-            );
-            let version_dir_str = version_dir.to_string_lossy();
-            download_file(
-                &asset.download_url,
-                &version_dir_str,
-                DownloadedFileType::Zip,
-            )
-            .map_err(|e| format!("failed to download jar: {e}"))?;
-        }
-
-        let jar_str = jar_path.to_string_lossy().to_string();
-        self.cached_jar_path = Some(jar_str.clone());
-        Ok(jar_str)
+    fn language_server_jar_path(&mut self, _id: &LanguageServerId) -> zed::Result<String> {
+        Ok("language-server-all.jar".to_string())
     }
 }
 
@@ -91,7 +31,7 @@ impl Extension for NextflowExtension {
     ) -> zed::Result<zed::Command> {
         let jar_path = self.language_server_jar_path(language_server_id)?;
         Ok(zed::Command {
-            command: "java".into(),
+            command: "./bin/java".into(),
             args: vec!["-jar".into(), jar_path],
             env: Vec::new(),
         })

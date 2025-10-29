@@ -1,6 +1,6 @@
 use std::env;
-use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
 use zed_extension_api::{
     self as zed,
     lsp::{Completion, CompletionKind},
@@ -9,30 +9,28 @@ use zed_extension_api::{
 };
 
 struct NextflowExtension {
-    cached_jar_path: Option<String>,
+    cached_jar_path: Option<PathBuf>,
 }
 
 impl NextflowExtension {
-    fn jar_absolute_path() -> PathBuf {
-        // ✅ Use Zed's extension dir, always writable
+    fn jar_path() -> PathBuf {
         let base = env::var("ZED_EXTENSION_DIR").unwrap_or_else(|_| ".".to_string());
-        let mut path = PathBuf::from(base);
-        path.push("language-server-all.jar");
-        path
+        Path::new(&base).join("language-server-all.jar")
     }
 
     fn ensure_language_server(
         &mut self,
         language_server_id: &LanguageServerId,
-    ) -> zed::Result<String> {
-        let jar_path = Self::jar_absolute_path();
-        println!("Using absolute JAR path: {:?}", jar_path);
+    ) -> zed::Result<PathBuf> {
+        let jar_path = Self::jar_path();
 
-        if jar_path.is_file() {
-            println!("Found existing JAR at {:?}", jar_path);
-            self.cached_jar_path = Some(jar_path.to_string_lossy().to_string());
-            return Ok(jar_path.to_string_lossy().to_string());
+        if jar_path.exists() {
+            println!("Using existing language server JAR at {:?}", jar_path);
+            self.cached_jar_path = Some(jar_path.clone());
+            return Ok(jar_path);
         }
+
+        println!("Downloading Nextflow language server to {:?}", jar_path);
 
         zed::set_language_server_installation_status(
             language_server_id,
@@ -52,8 +50,6 @@ impl NextflowExtension {
             release.version
         );
 
-        println!("Downloading JAR from {}", download_url);
-
         zed::set_language_server_installation_status(
             language_server_id,
             &LanguageServerInstallationStatus::Downloading,
@@ -61,15 +57,14 @@ impl NextflowExtension {
 
         zed::download_file(
             &download_url,
-            &jar_path.to_string_lossy(),
+            jar_path.to_str().ok_or("Could not convert path to str")?,
             DownloadedFileType::Uncompressed,
         )
-        .map_err(|e| format!("failed to download jar: {e}"))?;
+        .map_err(|e| format!("❌ Failed to download JAR: {e}"))?;
 
-        println!("Downloaded JAR to {:?}", jar_path);
-
-        self.cached_jar_path = Some(jar_path.to_string_lossy().to_string());
-        Ok(jar_path.to_string_lossy().to_string())
+        println!("Download complete: {:?}", jar_path);
+        self.cached_jar_path = Some(jar_path.clone());
+        Ok(jar_path)
     }
 }
 
@@ -86,19 +81,10 @@ impl Extension for NextflowExtension {
         _worktree: &Worktree,
     ) -> zed::Result<zed::Command> {
         let jar_path = self.ensure_language_server(language_server_id)?;
-        let abs_path = std::fs::canonicalize(&jar_path)
-            .unwrap_or_else(|_| PathBuf::from(&jar_path))
-            .to_string_lossy()
-            .to_string();
-
-        println!(
-            "Launching language server with absolute jar at {:?}",
-            abs_path
-        );
 
         Ok(zed::Command {
             command: "/usr/bin/java".into(),
-            args: vec!["-jar".into(), abs_path],
+            args: vec!["-jar".into(), jar_path.to_string_lossy().into()],
             env: Vec::new(),
         })
     }
