@@ -1,6 +1,3 @@
-use std::env;
-use std::path::{Path, PathBuf};
-
 use zed_extension_api::{
     self as zed,
     lsp::{Completion, CompletionKind},
@@ -8,35 +5,45 @@ use zed_extension_api::{
     GithubReleaseOptions, LanguageServerId, LanguageServerInstallationStatus, Worktree,
 };
 
-struct NextflowExtension {
-    cached_jar_path: Option<PathBuf>,
-}
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+
+const LS_JAR: &str = "language-server-all.jar";
+const LS_DIR: &str = "server";
+
+struct NextflowExtension {}
 
 impl NextflowExtension {
-    fn jar_path() -> PathBuf {
-        let base = env::var("ZED_EXTENSION_DIR").unwrap_or_else(|_| ".".to_string());
-        Path::new(&base).join("language-server-all.jar")
+    /// Constructs the full path for where the language server JAR should be stored.
+    /// It uses the `ZED_EXTENSION_DIR` environment variable provided by Zed.
+    fn get_jar_path() -> zed::Result<PathBuf> {
+        let base_dir = env::var("ZED_EXTENSION_DIR")
+            .map_err(|_| "ZED_EXTENSION_DIR environment variable not set".to_string())?;
+        let dir = PathBuf::from(base_dir).join(LS_DIR);
+        if !dir.exists() {
+            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        }
+        Ok(dir.join(LS_JAR))
     }
 
-    fn ensure_language_server(
-        &mut self,
+    /// This function ensures the language server JAR is available, downloading it if necessary.
+    /// The download is synchronous (blocking), which is required by this version of the API.
+    fn ensure_server_jar_is_downloaded(
+        &self,
         language_server_id: &LanguageServerId,
     ) -> zed::Result<PathBuf> {
-        let jar_path = Self::jar_path();
-
+        let jar_path = Self::get_jar_path()?;
         if jar_path.exists() {
-            println!("Using existing language server JAR at {:?}", jar_path);
-            self.cached_jar_path = Some(jar_path.clone());
             return Ok(jar_path);
         }
 
-        println!("Downloading Nextflow language server to {:?}", jar_path);
-
         zed::set_language_server_installation_status(
             language_server_id,
-            &LanguageServerInstallationStatus::CheckingForUpdate,
+            &LanguageServerInstallationStatus::Downloading,
         );
 
+        // Get the latest release from GitHub to find the download URL.
         let release = zed::latest_github_release(
             "nextflow-io/language-server",
             GithubReleaseOptions {
@@ -50,45 +57,52 @@ impl NextflowExtension {
             release.version
         );
 
-        zed::set_language_server_installation_status(
-            language_server_id,
-            &LanguageServerInstallationStatus::Downloading,
-        );
+        // The download path needs to be a string.
+        let jar_path_str = jar_path
+            .to_str()
+            .ok_or_else(|| "Failed to convert JAR path to string".to_string())?;
 
+        // Perform the synchronous download.
         zed::download_file(
             &download_url,
-            jar_path.to_str().ok_or("Could not convert path to str")?,
+            jar_path_str,
             DownloadedFileType::Uncompressed,
         )
-        .map_err(|e| format!("❌ Failed to download JAR: {e}"))?;
+        .map_err(|e| format!("Failed to download language server JAR: {e}"))?;
 
-        println!("Download complete: {:?}", jar_path);
-        self.cached_jar_path = Some(jar_path.clone());
         Ok(jar_path)
     }
 }
 
 impl Extension for NextflowExtension {
     fn new() -> Self {
-        Self {
-            cached_jar_path: None,
-        }
+        Self {}
     }
 
+    /// This is the main entry point called by Zed to start the language server.
     fn language_server_command(
         &mut self,
         language_server_id: &LanguageServerId,
         _worktree: &Worktree,
     ) -> zed::Result<zed::Command> {
-        let jar_path = self.ensure_language_server(language_server_id)?;
+        zed::set_language_server_installation_status(
+            language_server_id,
+            &LanguageServerInstallationStatus::CheckingForUpdate,
+        );
 
+        // 1. Ensure the language server JAR is downloaded.
+        let jar_path = self.ensure_server_jar_is_downloaded(language_server_id)?;
+
+        // 2. Construct the command to run the language server.
+        //    We rely on the user having `java` in their system's PATH.
         Ok(zed::Command {
-            command: "/usr/bin/java".into(),
+            command: "java".to_string(),
             args: vec!["-jar".into(), jar_path.to_string_lossy().into()],
             env: Vec::new(),
         })
     }
 
+    /// Provides custom labels for LSP completion items.
     fn label_for_completion(
         &self,
         _language_server_id: &LanguageServerId,
@@ -127,4 +141,5 @@ impl Extension for NextflowExtension {
     }
 }
 
+// Register the extension with Zed. This is crucial.
 register_extension!(NextflowExtension);

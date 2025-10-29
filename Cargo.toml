@@ -7,6 +7,26 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-dirs = "6.0.0"
-reqwest = { version = "0.12.23", features = ["blocking"] }
-zed_extension_api = "0.6.0"
+# Updated to a recent version that supports async trait methods
+zed_extension_api = "0.7.0"
+
+
+# Optional dependencies for native helper binaries, not included in the wasm build
+reqwest = { version = "0.12.23", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+
+[features]
+# By default, only build the wasm library without native dependencies
+default = []
+# This feature enables the native helper binaries and their dependencies
+native-helpers = ["dep:reqwest", "dep:tokio"]
+
+[[bin]]
+name = "debug"
+path = "src/bin/debug.rs"
+required-features = ["native-helpers"]
+
+[[bin]]
+name = "real_donwloader"
+path = "src/bin/real_donwloader.rs"
+required-features = ["native-helpers"]
