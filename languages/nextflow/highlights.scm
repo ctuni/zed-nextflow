@@ -1,4 +1,19 @@
 ; Highlights for Nextflow language (based on Groovy)
+;
+
+(include) @keyword.import
+
+(number) @number
+(closure) @closure
+(workflow_definition) @type.definition
+(output_declaration) @type.definition
+(directive) @keyword.directive
+(binary_expression) @operator
+(process_invocation) @module
+(parameter) @parameter
+(include) @keyword.directive
+(variable_declaration) @keyword.directive
+
 
 [
   "true"
@@ -7,7 +22,7 @@
 
 
 (comment) @comment
-(shebang) @comment
+(shebang) @shebang
 
 (string) @string
 
