@@ -16,4 +16,3 @@ brackets = [
 autoclose_before = ",]}>"
 collapsed_placeholder = " /* ... */ "
 line_comments = ["// "]
-block_comment = ["/* ", " */", "/** ", " */", "/**@ ", " */"]

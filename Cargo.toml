@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 zed_extension_api = "0.7.0"
 
 
+
 # Optional dependencies for native helper binaries, not included in the wasm build
 reqwest = { version = "0.12.23", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }

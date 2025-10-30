@@ -9,75 +9,41 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-// Constants for the language server JAR file and directory.
 const LS_JAR: &str = "language-server-all.jar";
-const LS_DIR: &str = "server";
+const LS_DIR: &str = "nextflow-language-server";
 
-// The main struct for our extension. It's stateless.
 struct NextflowExtension {}
 
 impl NextflowExtension {
-    /// Constructs the full path for where the language server JAR should be stored.
-    /// It uses the `ZED_EXTENSION_DIR` environment variable provided by Zed.
-    fn get_jar_path() -> zed::Result<PathBuf> {
-        let base_dir = env::var("ZED_EXTENSION_DIR")
-            .map_err(|_| "ZED_EXTENSION_DIR environment variable not set".to_string())?;
-        let dir = PathBuf::from(base_dir).join(LS_DIR);
-        if !dir.exists() {
-            // This log will appear in Zed's main log file.
-            println!(
-                "💡 Nextflow extension: Creating server directory at {:?}",
-                dir
-            );
-            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        }
-        Ok(dir.join(LS_JAR))
-    }
-
-    /// This function ensures the language server JAR is available, downloading it if necessary.
-    /// The download is synchronous (blocking), which is required by this version of the API.
     fn ensure_server_jar_is_downloaded(
         &self,
         language_server_id: &LanguageServerId,
     ) -> zed::Result<PathBuf> {
-        println!("➡️ Nextflow extension: Ensuring server JAR is downloaded...");
-        let jar_path = Self::get_jar_path()?;
+        // We use a simple relative path. Zed will place this inside a private,
+        // writable directory specific to this extension.
+        let jar_dir = PathBuf::from(LS_DIR);
+        let jar_path = jar_dir.join(LS_JAR);
+
         if jar_path.exists() {
-            println!(
-                "✅ Nextflow extension: Server JAR already exists at {:?}",
-                jar_path
-            );
             return Ok(jar_path);
         }
 
-        println!("ℹ️ Nextflow extension: Server JAR not found. Starting download process...");
+        if !jar_dir.exists() {
+            fs::create_dir_all(&jar_dir).map_err(|e| e.to_string())?;
+        }
 
         zed::set_language_server_installation_status(
             language_server_id,
             &LanguageServerInstallationStatus::Downloading,
         );
 
-        println!("🔎 Nextflow extension: Fetching latest GitHub release for nextflow-io/language-server...");
         let release = zed::latest_github_release(
             "nextflow-io/language-server",
             GithubReleaseOptions {
                 require_assets: true,
                 pre_release: false,
             },
-        )
-        .map_err(|e| {
-            let err_msg = format!(
-                "❌ Nextflow extension: Failed to fetch GitHub release: {}",
-                e
-            );
-            eprintln!("{}", err_msg);
-            err_msg
-        })?;
-
-        println!(
-            "🎉 Nextflow extension: Found latest release: {}",
-            release.version
-        );
+        )?;
 
         let download_url = format!(
             "https://github.com/nextflow-io/language-server/releases/download/{}/language-server-all.jar",
@@ -88,65 +54,52 @@ impl NextflowExtension {
             .to_str()
             .ok_or_else(|| "Failed to convert JAR path to string".to_string())?;
 
-        println!(
-            "⬇️ Nextflow extension: Downloading from URL: {}",
-            download_url
-        );
-        println!("💾 Nextflow extension: Saving to path: {}", jar_path_str);
-
-        // This is a blocking call. If it hangs, the installation will hang.
         zed::download_file(
             &download_url,
             jar_path_str,
             DownloadedFileType::Uncompressed,
         )
-        .map_err(|e| {
-            let err_msg = format!(
-                "❌ Nextflow extension: Failed to download language server JAR: {}",
-                e
-            );
-            eprintln!("{}", err_msg);
-            err_msg
-        })?;
-
-        println!("✅ Nextflow extension: Download complete.");
+        .map_err(|e| format!("Failed to download language server JAR: {e}"))?;
 
         Ok(jar_path)
     }
 }
 
-// Implement the `Extension` trait for our struct.
 impl Extension for NextflowExtension {
     fn new() -> Self {
         Self {}
     }
 
-    /// This is the main entry point called by Zed to start the language server.
     fn language_server_command(
         &mut self,
         language_server_id: &LanguageServerId,
         _worktree: &Worktree,
     ) -> zed::Result<zed::Command> {
-        println!("🚀 Nextflow extension: `language_server_command` called.");
-
         zed::set_language_server_installation_status(
             language_server_id,
             &LanguageServerInstallationStatus::CheckingForUpdate,
         );
 
-        // Ensure the language server JAR is downloaded.
-        let jar_path = self.ensure_server_jar_is_downloaded(language_server_id)?;
+        // 1. Download the JAR to a relative path.
+        let relative_jar_path = self.ensure_server_jar_is_downloaded(language_server_id)?;
 
-        println!("🔧 Nextflow extension: Constructing `java` command.");
-        // We rely on the user having `java` in their system's PATH.
+        // 2. Get the absolute path to the current working directory.
+        //    When Zed runs the extension, this is the private, writable directory.
+        let work_dir = env::current_dir().map_err(|e| e.to_string())?;
+        let absolute_jar_path = work_dir.join(relative_jar_path);
+
+        // 3. Construct the shell command using the absolute path.
+        let jar_path_str = absolute_jar_path.to_string_lossy();
+        let command_string = format!("java -jar '{}'", jar_path_str);
+
+        // 4. Execute via a shell to ensure `java` is found in the PATH.
         Ok(zed::Command {
-            command: "java".to_string(),
-            args: vec!["-jar".into(), jar_path.to_string_lossy().into()],
-            env: Vec::new(),
+            command: "/bin/sh".to_string(),
+            args: vec!["-c".to_string(), command_string],
+            env: Default::default(),
         })
     }
 
-    /// Provides custom labels for LSP completion items.
     fn label_for_completion(
         &self,
         _language_server_id: &LanguageServerId,
@@ -185,5 +138,4 @@ impl Extension for NextflowExtension {
     }
 }
 
-// Register the extension with Zed. This is crucial.
 register_extension!(NextflowExtension);
