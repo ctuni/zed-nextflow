@@ -2,18 +2,29 @@
 ;
 
 (include) @keyword.import
-
 (number) @number
 (closure) @closure
+(parameter) @parameter
+
 (workflow_definition) @type.definition
+(workflow_body) @string
+(workflow_input) @type.definition
+(workflow_main) @type.definition
+(workflow_emit) @type.definition
+
+(process_invocation) @module
+(process_output) @type.definition
+
+(command_expression) @variable
+(variable_declaration) @keyword.directive
+
+(if_statement) @type.interface
+(else_if_clause) @type.interface
+(else_clause) @type.interface
+
 (output_declaration) @type.definition
 (directive) @keyword.directive
 (binary_expression) @operator
-(process_invocation) @module
-(parameter) @parameter
-(include) @keyword.directive
-(variable_declaration) @keyword.directive
-
 
 [
   "true"
