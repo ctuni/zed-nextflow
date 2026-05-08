@@ -4,6 +4,17 @@
 (include) @keyword.import
 (include_item) @emphasis.strong
 
+[
+  "include"
+  "from"
+  "as"
+  "process"
+  "workflow"
+  "params"
+  "def"
+  "nextflow"
+] @keyword
+
 (expression_statement) @expression_statement
 (assignment_statement) @expression_statement
 

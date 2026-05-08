@@ -120,6 +120,22 @@ cp target/wasm32-wasip2/release/my_zed_nextflow.wasm extension.wasm
 
 - Reload the extension in Zed and reopen a `.nf` file.
 
+### "Script could not be formatted because it has syntax errors" on save
+
+The Nextflow language server includes a formatter that Zed invokes on save. When the LSP cannot format a file (e.g. because it reports parse errors), Zed surfaces this warning.
+
+To silence it, add the following to your Zed `settings.json`:
+
+```json
+"languages": {
+  "Nextflow": {
+    "format_on_save": "off"
+  }
+}
+```
+
+Zed's keyboard shortcut to open settings: `cmd+,` (macOS) / `ctrl+,` (Linux/Windows).
+
 ### Syntax highlighting looks incomplete
 
 - Confirm the grammar and query files are present:
