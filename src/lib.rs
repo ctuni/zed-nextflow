@@ -100,6 +100,38 @@ impl Extension for NextflowExtension {
         })
     }
 
+    fn language_server_workspace_configuration(
+        &mut self,
+        _language_server_id: &LanguageServerId,
+        _worktree: &Worktree,
+    ) -> zed::Result<Option<zed::serde_json::Value>> {
+        Ok(Some(zed::serde_json::json!({
+            "nextflow": {
+                "completion": {
+                    "extended": false,
+                    "maxItems": 100,
+                },
+                "debug": false,
+                "errorReportingMode": "warnings",
+                "files": {
+                    "exclude": [".git", ".nf-test", "work"],
+                },
+                "formatting": {
+                    "harshilAlignment": false,
+                    "maheshForm": false,
+                    "sortDeclarations": false,
+                },
+                "java": {
+                    "home": "",
+                },
+                "languageVersion": "26.04",
+                "telemetry": {
+                    "enabled": false,
+                },
+            },
+        })))
+    }
+
     fn label_for_completion(
         &self,
         _language_server_id: &LanguageServerId,
